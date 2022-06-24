@@ -204,6 +204,24 @@ class FlutterBluePlus {
     _isScanning.add(false);
   }
 
+  /// Starts advertising with provided data
+  Future<bool?> startAdvertising(final Uint8List manufacturerData) {
+    if(Platform.isAndroid) {
+      return _channel.invokeMethod<bool>('startAdvertising', manufacturerData);
+    } else {
+      throw "Advertising is implemented only for Android";
+    }
+  }
+
+  /// Stops Advertising
+  Future<bool?> stopAdvertising() {
+    if(Platform.isAndroid) {
+      return _channel.invokeMethod<bool>('stopAdvertising');
+    } else {
+      throw "Advertising is implemented only for Android";
+    }
+  }
+
   /// The list of connected peripherals can include those that are connected
   /// by other apps and that will need to be connected locally using the
   /// device.connect() method before they can be used.

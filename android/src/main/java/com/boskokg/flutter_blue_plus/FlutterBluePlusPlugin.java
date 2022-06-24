@@ -59,6 +59,12 @@ import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry.RequestPermissionsResultListener;
+import android.bluetooth.le.AdvertiseCallback;
+import android.bluetooth.le.AdvertiseData;
+import android.bluetooth.le.AdvertiseSettings;
+import android.bluetooth.le.BluetoothLeAdvertiser;
+import static android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY;
+import static android.bluetooth.le.AdvertiseSettings.ADVERTISE_TX_POWER_HIGH;
 
 public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, RequestPermissionsResultListener, ActivityAware {
 
@@ -79,6 +85,8 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
   static final private UUID CCCD_ID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
   private final Map<String, BluetoothDeviceCache> mDevices = new HashMap<>();
   private LogLevel logLevel = LogLevel.EMERGENCY;
+
+  private static final int untitledCompanyManufacturerId = 65535;
 
   private interface OperationOnPermission {
     void op(boolean granted, String permission);
@@ -259,6 +267,25 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
             result.error(
                     "no_permissions", String.format("flutter_blue plugin requires %s for scanning", permissionScan), null);
         });
+        break;
+      }
+
+      case "startAdvertising": {
+        {
+          ensurePermissionBeforeAction(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? Manifest.permission.BLUETOOTH_ADVERTISE : Manifest.permission.BLUETOOTH_ADMIN, (granted, permission) -> {
+            if (!granted) {
+              result.error(
+                      "no_permissions", String.format("flutter_blue plugin requires %s for starting advertising", permission), null);
+              return;
+            }
+            result.success(startAdvertising(call));
+          });
+          break;
+        }
+      }
+
+      case "stopAdvertising": {
+        result.success(stopAdvertising());
         break;
       }
 
@@ -907,6 +934,66 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
 
   private void stopScan18() {
     mBluetoothAdapter.stopLeScan(getScanCallback18());
+  }
+
+  private AdvertiseCallback advertiseCallback;
+
+  @TargetApi(21)
+  private AdvertiseCallback getAdvertisingCallback() {
+    if(advertiseCallback == null) {
+      advertiseCallback = new AdvertiseCallback() {
+        @Override
+        public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+          super.onStartSuccess(settingsInEffect);
+          log(LogLevel.DEBUG, "Advertising is started with settings: " + settingsInEffect.toString());
+        }
+
+        @Override
+        public void onStartFailure(int errorCode) {
+          super.onStartFailure(errorCode);
+          log(LogLevel.EMERGENCY, "Got error during Advertising start with errorCode: " + errorCode);
+        }
+      };
+    }
+    return advertiseCallback;
+  }
+
+  private boolean startAdvertising(MethodCall call) {
+
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+      BluetoothLeAdvertiser advertiser = mBluetoothAdapter.getBluetoothLeAdvertiser();
+
+      if (advertiser != null) {
+        AdvertiseSettings.Builder settingsBuilder = new AdvertiseSettings.Builder();
+        settingsBuilder.setConnectable(false)
+                .setTimeout(0) // will be turned on indefinitely
+                .setAdvertiseMode(ADVERTISE_MODE_LOW_LATENCY)
+                .setTxPowerLevel(ADVERTISE_TX_POWER_HIGH);
+
+        byte[] manufacturerData = call.arguments();
+
+        AdvertiseData advertiseData = new AdvertiseData.Builder()
+                .setIncludeDeviceName(false)
+                .addManufacturerData(untitledCompanyManufacturerId, manufacturerData)
+                .build();
+        advertiser.startAdvertising(settingsBuilder.build(), advertiseData, getAdvertisingCallback());
+        return true;
+      }
+    }
+
+    return false;
+
+  }
+
+  private boolean stopAdvertising() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      BluetoothLeAdvertiser advertiser = mBluetoothAdapter.getBluetoothLeAdvertiser();
+      if (advertiser != null) {
+        advertiser.stopAdvertising(getAdvertisingCallback());
+        return true;
+      }
+    }
+    return false;
   }
 
   private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
