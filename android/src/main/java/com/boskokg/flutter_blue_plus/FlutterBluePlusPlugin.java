@@ -16,6 +16,7 @@ import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
+import android.bluetooth.BluetoothStatusCodes;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
@@ -66,6 +67,7 @@ import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import static android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY;
 import static android.bluetooth.le.AdvertiseSettings.ADVERTISE_TX_POWER_HIGH;
+import static com.boskokg.flutter_blue_plus.FlutterBluePlusPlugin.LogLevel.EMERGENCY;
 
 public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, RequestPermissionsResultListener, ActivityAware {
 
@@ -85,7 +87,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
 
   static final private UUID CCCD_ID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
   private final Map<String, BluetoothDeviceCache> mDevices = new HashMap<>();
-  private LogLevel logLevel = LogLevel.EMERGENCY;
+  private LogLevel logLevel = EMERGENCY;
 
   private static final int untitledCompanyManufacturerId = 65535;
 
@@ -171,7 +173,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
   }
 
   @Override
-  public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+  public boolean onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
     OperationOnPermission operation = operationsOnPermission.get(requestCode);
     if (operation != null && grantResults.length > 0) {
       operation.op(grantResults[0] == PackageManager.PERMISSION_GRANTED, permissions[0]);
@@ -320,7 +322,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
             p.addDevices(ProtoMaker.from(d));
           }
           result.success(p.build().toByteArray());
-          log(LogLevel.EMERGENCY, "mDevices size: " + mDevices.size());
+          log(EMERGENCY, "mDevices size: " + mDevices.size());
         });
         break;
       }
@@ -333,7 +335,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
           p.addDevices(ProtoMaker.from(d));
         }
         result.success(p.build().toByteArray());
-        log(LogLevel.EMERGENCY, "mDevices size: " + mDevices.size());
+        log(EMERGENCY, "mDevices size: " + mDevices.size());
         break;
       }
 
@@ -546,17 +548,24 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
         }
 
         // Apply the correct write type
+        int writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
         if(request.getWriteType() == Protos.WriteCharacteristicRequest.WriteType.WITHOUT_RESPONSE) {
-          characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+          writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE;
+        }
+        characteristic.setWriteType(writeType);
+
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+          int cResult = gattServer.writeCharacteristic(characteristic, request.getValue().toByteArray(), writeType);
+          if(cResult != BluetoothStatusCodes.SUCCESS) {
+            result.error("write_characteristic_error", "writeCharacteristic failed", cResult);
+            return;
+          }
         } else {
-          characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+          if(!gattServer.writeCharacteristic(characteristic)){
+            result.error("write_characteristic_error", "writeCharacteristic failed", null);
+            return;
+          }
         }
-
-        if(!gattServer.writeCharacteristic(characteristic)){
-          result.error("write_characteristic_error", "writeCharacteristic failed", null);
-          return;
-        }
-
         result.success(null);
         break;
       }
@@ -589,7 +598,13 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
           result.error("write_descriptor_error", "could not set the local value for descriptor", null);
         }
 
-        if(!gattServer.writeDescriptor(descriptor)){
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+          int cResult = gattServer.writeDescriptor(descriptor, request.getValue().toByteArray());
+          if(cResult != BluetoothStatusCodes.SUCCESS) {
+            result.error("write_descriptor_error", "writeCharacteristic failed", cResult);
+            return;
+          }
+        } else if(!gattServer.writeDescriptor(descriptor)){
           result.error("write_descriptor_error", "writeCharacteristic failed", null);
           return;
         }
@@ -988,7 +1003,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
         @Override
         public void onStartFailure(int errorCode) {
           super.onStartFailure(errorCode);
-          log(LogLevel.EMERGENCY, "Got error during Advertising start with errorCode: " + errorCode);
+          log(EMERGENCY, "Got error during Advertising start with errorCode: " + errorCode);
         }
       };
     }
