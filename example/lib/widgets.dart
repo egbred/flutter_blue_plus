@@ -25,7 +25,11 @@ class ScanResultTile extends StatelessWidget {
           Text(
             result.device.id.toString(),
             style: Theme.of(context).textTheme.caption,
-          )
+          ),
+          Text(
+            "Manufacturer Data: ${result.advertisementData.manufacturerData.toString()}",
+            style: Theme.of(context).textTheme.caption,
+          ),
         ],
       );
     } else {
