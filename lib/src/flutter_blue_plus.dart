@@ -394,7 +394,7 @@ class FlutterBluePlus {
   }
 
   /// Stops Advertising
-  Future<void> stopAdvertising() {
+  static Future<void> stopAdvertising() {
     if(Platform.isAndroid) {
       return _invokeMethod('stopAdvertising');
     } else {
