@@ -4,6 +4,9 @@
 
 package com.lib.flutter_blue_plus;
 
+import static android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY;
+import static android.bluetooth.le.AdvertiseSettings.ADVERTISE_TX_POWER_HIGH;
+
 import android.Manifest;
 import android.annotation.TargetApi;
 import android.app.Activity;
@@ -18,6 +21,10 @@ import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothStatusCodes;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.AdvertiseCallback;
+import android.bluetooth.le.AdvertiseData;
+import android.bluetooth.le.AdvertiseSettings;
+import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
@@ -98,6 +105,8 @@ public class FlutterBluePlusPlugin implements
     private ActivityPluginBinding activityBinding;
 
     static final private String CCCD = "2902";
+
+    static final private int untitledCompanyManufacturerId = 65535;
 
     private final Map<String, BluetoothGatt> mConnectedDevices = new ConcurrentHashMap<>();
     private final Map<String, BluetoothGatt> mCurrentlyConnectingDevices = new ConcurrentHashMap<>();
@@ -1418,6 +1427,59 @@ public class FlutterBluePlusPlugin implements
                     break;
                 }
 
+                case "startAdvertising": {
+
+                    ArrayList<String> permissions = new ArrayList<>();
+
+                    if (Build.VERSION.SDK_INT >= 31) { // Android 12 (October 2021)
+                        permissions.add(Manifest.permission.BLUETOOTH_ADVERTISE);
+                    }
+
+                    if (Build.VERSION.SDK_INT <= 30) { // Android 11 (September 2020)
+                        permissions.add(Manifest.permission.BLUETOOTH_ADMIN);
+                    }
+
+                    ensurePermissions(permissions, (granted, perm) -> {
+                            if (!granted) {
+                                result.error(
+                                        "no_permissions", String.format("flutter_blue_plus plugin requires %s for starting advertising", perm), null);
+                                return;
+                            }
+                            BluetoothLeAdvertiser advertiser = mBluetoothAdapter.getBluetoothLeAdvertiser();
+
+                            if (advertiser == null) {
+                                result.error("startAdvertising", "BluetoothLeAdvertiser is null", null);
+                                return;
+                            }
+
+                                AdvertiseSettings.Builder settingsBuilder = new AdvertiseSettings.Builder();
+                                settingsBuilder.setConnectable(false)
+                                        .setTimeout(0) // will be turned on indefinitely
+                                        .setAdvertiseMode(ADVERTISE_MODE_LOW_LATENCY)
+                                        .setTxPowerLevel(ADVERTISE_TX_POWER_HIGH);
+
+                                byte[] manufacturerData = call.arguments();
+
+                                AdvertiseData advertiseData = new AdvertiseData.Builder()
+                                        .setIncludeDeviceName(false)
+                                        .addManufacturerData(untitledCompanyManufacturerId, manufacturerData)
+                                        .build();
+                                advertiser.startAdvertising(settingsBuilder.build(), advertiseData, advertiseCallback);
+                        result.success(true);
+                    });
+                    break;
+                }
+
+                case "stopAdvertising": {
+                    BluetoothLeAdvertiser advertiser = mBluetoothAdapter.getBluetoothLeAdvertiser();
+                    if (advertiser != null) {
+                        advertiser.stopAdvertising(advertiseCallback);
+                    }
+                    result.success(true);
+                    break;
+                }
+
+
                 default:
                 {
                     result.notImplemented();
@@ -2317,6 +2379,20 @@ public class FlutterBluePlusPlugin implements
         }
 
     }; // BluetoothGattCallback
+
+    private final AdvertiseCallback advertiseCallback = new AdvertiseCallback() {
+                @Override
+                public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+                    super.onStartSuccess(settingsInEffect);
+                    log(LogLevel.DEBUG, "Advertising is started with settings: " + settingsInEffect.toString());
+                }
+
+                @Override
+                public void onStartFailure(int errorCode) {
+                    super.onStartFailure(errorCode);
+                    log(LogLevel.ERROR, "Got error during Advertising start with errorCode: " + errorCode);
+                }
+            };
 
     //////////////////////////////////////////////////////////////////////
     // ███    ███  ███████   ██████      

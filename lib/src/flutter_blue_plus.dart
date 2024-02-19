@@ -384,6 +384,24 @@ class FlutterBluePlus {
     return await _invokeMethod('getPhySupport').then((args) => PhySupport.fromMap(args));
   }
 
+  /// Starts advertising with provided data
+  static Future<void> startAdvertising(final Uint8List manufacturerData) {
+    if(Platform.isAndroid) {
+      return _invokeMethod('startAdvertising', manufacturerData);
+    } else {
+      throw "Advertising is implemented only for Android";
+    }
+  }
+
+  /// Stops Advertising
+  Future<void> stopAdvertising() {
+    if(Platform.isAndroid) {
+      return _invokeMethod('stopAdvertising');
+    } else {
+      throw "Advertising is implemented only for Android";
+    }
+  }
+
   static Future<dynamic> _initFlutterBluePlus() async {
     if (_initialized) {
       return;
